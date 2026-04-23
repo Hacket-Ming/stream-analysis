@@ -1,0 +1,17 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.eggs/
+*.264
+*.265
+*.h264
+*.h265
+*.hevc
+*.mp4
+*.mkv
+*.ts
+*.flv
+.claude/
+.DS_Store
