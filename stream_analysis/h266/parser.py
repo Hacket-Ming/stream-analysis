@@ -1,26 +1,30 @@
-"""H.265 bitstream parser - top-level dispatcher.
+"""H.266 (VVC) bitstream parser - top-level dispatcher.
 
-Maintains VPS/SPS/PPS state and dispatches NAL units to sub-parsers.
+Maintains VPS/SPS/PPS/APS state and dispatches NAL units to sub-parsers.
 """
 
 from stream_analysis.bitreader import BitReader
-from stream_analysis.nal import NalUnit, parse_h265_nal_header, find_nal_units
-from stream_analysis.h265.definitions import NalUnitType, NAL_TYPE_NAMES, is_vcl
-from stream_analysis.h265.vps import parse_vps
-from stream_analysis.h265.sps import parse_sps
-from stream_analysis.h265.pps import parse_pps
-from stream_analysis.h265.sei import parse_sei
-from stream_analysis.h265.slice_header import parse_slice_header
-from stream_analysis.h265.other import parse_aud, parse_filler_data, parse_eos, parse_eob
+from stream_analysis.nal import NalUnit, parse_h266_nal_header, find_nal_units
+from stream_analysis.h266.definitions import NalUnitType, NAL_TYPE_NAMES, is_vcl
+from stream_analysis.h266.vps import parse_vps
+from stream_analysis.h266.sps import parse_sps
+from stream_analysis.h266.pps import parse_pps
+from stream_analysis.h266.aps import parse_aps
+from stream_analysis.h266.picture_header import parse_picture_header
+from stream_analysis.h266.sei import parse_sei
+from stream_analysis.h266.slice_header import parse_slice_header
+from stream_analysis.h266.other import parse_dci, parse_opi, parse_aud, parse_filler_data, parse_eos, parse_eob
 
 
-class H265Parser:
-    """Parses H.265 (HEVC) Annex B bitstreams."""
+class H266Parser:
+    """Parses H.266 (VVC) Annex B bitstreams."""
 
     def __init__(self):
         self._vps_map: dict[int, dict] = {}
         self._sps_map: dict[int, dict] = {}
         self._pps_map: dict[int, dict] = {}
+        self._aps_map: dict[tuple[int, int], dict] = {}  # (type, id) -> aps
+        self._active_ph: dict | None = None
 
     def parse_stream(self, data: bytes) -> list[dict]:
         """Parse all NAL units in an Annex B byte stream."""
@@ -33,15 +37,16 @@ class H265Parser:
 
     def parse_nal_unit(self, nal: NalUnit, index: int = 0) -> dict:
         """Parse a single NAL unit and return its syntax elements."""
-        header = parse_h265_nal_header(nal.raw_data)
+        header = parse_h266_nal_header(nal.raw_data)
 
         result = {
             "index": index,
             "offset": nal.offset,
             "size": nal.size,
             "start_code_length": nal.start_code_len,
-            "codec": "h265",
+            "codec": "h266",
             "forbidden_zero_bit": header.forbidden_zero_bit,
+            "nuh_reserved_zero_bit": header.nuh_reserved_zero_bit,
             "nal_unit_type": header.nal_unit_type,
             "nal_unit_type_name": NAL_TYPE_NAMES.get(header.nal_unit_type, f"unknown({header.nal_unit_type})"),
             "nuh_layer_id": header.nuh_layer_id,
@@ -65,44 +70,68 @@ class H265Parser:
         """Dispatch to the appropriate sub-parser based on NAL unit type."""
         nal_type = header.nal_unit_type
 
-        if nal_type == NalUnitType.VPS:
+        if nal_type == NalUnitType.VPS_NUT:
             vps = parse_vps(reader)
             vps_id = vps.get("vps_video_parameter_set_id", 0)
             self._vps_map[vps_id] = vps
             return vps
 
-        elif nal_type == NalUnitType.SPS:
+        elif nal_type == NalUnitType.SPS_NUT:
             sps = parse_sps(reader)
             sps_id = sps.get("sps_seq_parameter_set_id", 0)
             self._sps_map[sps_id] = sps
             return sps
 
-        elif nal_type == NalUnitType.PPS:
+        elif nal_type == NalUnitType.PPS_NUT:
             pps = parse_pps(reader, self._sps_map)
             pps_id = pps.get("pps_pic_parameter_set_id", 0)
             self._pps_map[pps_id] = pps
             return pps
 
-        elif nal_type in (NalUnitType.SEI_PREFIX, NalUnitType.SEI_SUFFIX):
+        elif nal_type in (NalUnitType.PREFIX_APS_NUT, NalUnitType.SUFFIX_APS_NUT):
+            aps = parse_aps(reader)
+            aps_type = aps.get("aps_params_type", 0)
+            aps_id = aps.get("aps_adaptation_parameter_set_id", 0)
+            self._aps_map[(aps_type, aps_id)] = aps
+            return aps
+
+        elif nal_type == NalUnitType.PH_NUT:
+            ph = parse_picture_header(
+                reader, nal_type,
+                self._vps_map, self._sps_map, self._pps_map)
+            self._active_ph = ph
+            return ph
+
+        elif nal_type in (NalUnitType.PREFIX_SEI_NUT, NalUnitType.SUFFIX_SEI_NUT):
             messages = parse_sei(reader)
             return {"sei_messages": messages}
 
         elif is_vcl(nal_type):
-            return parse_slice_header(
+            sh = parse_slice_header(
                 reader, nal_type,
-                self._vps_map, self._sps_map, self._pps_map
-            )
+                self._vps_map, self._sps_map, self._pps_map,
+                self._active_ph)
+            # If slice header contains an embedded PH, update active PH
+            if sh.get("picture_header"):
+                self._active_ph = sh["picture_header"]
+            return sh
 
-        elif nal_type == NalUnitType.AUD:
+        elif nal_type == NalUnitType.AUD_NUT:
             return parse_aud(reader)
 
-        elif nal_type == NalUnitType.FILLER_DATA:
+        elif nal_type == NalUnitType.DCI_NUT:
+            return parse_dci(reader)
+
+        elif nal_type == NalUnitType.OPI_NUT:
+            return parse_opi(reader)
+
+        elif nal_type == NalUnitType.FD_NUT:
             return parse_filler_data(nal.raw_data)
 
-        elif nal_type == NalUnitType.EOS:
+        elif nal_type == NalUnitType.EOS_NUT:
             return parse_eos()
 
-        elif nal_type == NalUnitType.EOB:
+        elif nal_type == NalUnitType.EOB_NUT:
             return parse_eob()
 
         else:

@@ -38,6 +38,7 @@ class H264Parser:
             "offset": nal.offset,
             "size": nal.size,
             "start_code_length": nal.start_code_len,
+            "codec": "h264",
             "forbidden_zero_bit": header.forbidden_zero_bit,
             "nal_ref_idc": header.nal_ref_idc,
             "nal_unit_type": header.nal_unit_type,

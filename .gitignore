@@ -9,6 +9,9 @@ build/
 *.h264
 *.h265
 *.hevc
+*.266
+*.h266
+*.vvc
 *.mp4
 *.mkv
 *.ts

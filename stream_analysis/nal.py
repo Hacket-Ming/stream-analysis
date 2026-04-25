@@ -37,6 +37,21 @@ class H265NalHeader:
     nuh_temporal_id_plus1: int  # 3 bits
 
 
+@dataclass
+class H266NalHeader:
+    """H.266 (VVC) NAL unit header (2 bytes).
+
+    Layout differs from H.265:
+      byte0: forbidden_zero_bit(1) + nuh_reserved_zero_bit(1) + nuh_layer_id(6)
+      byte1: nal_unit_type(5) + nuh_temporal_id_plus1(3)
+    """
+    forbidden_zero_bit: int  # 1 bit, should be 0
+    nuh_reserved_zero_bit: int  # 1 bit, should be 0
+    nuh_layer_id: int  # 6 bits
+    nal_unit_type: int  # 5 bits
+    nuh_temporal_id_plus1: int  # 3 bits
+
+
 def find_nal_units(data: bytes) -> list[NalUnit]:
     """Find all NAL units in an Annex B byte stream.
 
@@ -155,5 +170,24 @@ def parse_h265_nal_header(data: bytes) -> H265NalHeader:
         forbidden_zero_bit=(byte0 >> 7) & 1,
         nal_unit_type=(byte0 >> 1) & 0x3F,
         nuh_layer_id=((byte0 & 1) << 5) | ((byte1 >> 3) & 0x1F),
+        nuh_temporal_id_plus1=byte1 & 7,
+    )
+
+
+def parse_h266_nal_header(data: bytes) -> H266NalHeader:
+    """Parse a 2-byte H.266 (VVC) NAL unit header.
+
+    byte0: forbidden_zero_bit(1) + nuh_reserved_zero_bit(1) + nuh_layer_id(6)
+    byte1: nal_unit_type(5) + nuh_temporal_id_plus1(3)
+    """
+    if len(data) < 2:
+        raise ValueError("NAL unit data too short for H.266 header")
+    byte0 = data[0]
+    byte1 = data[1]
+    return H266NalHeader(
+        forbidden_zero_bit=(byte0 >> 7) & 1,
+        nuh_reserved_zero_bit=(byte0 >> 6) & 1,
+        nuh_layer_id=byte0 & 0x3F,
+        nal_unit_type=(byte1 >> 3) & 0x1F,
         nuh_temporal_id_plus1=byte1 & 7,
     )

@@ -23,10 +23,11 @@ def detect_file_info(filepath: str) -> dict:
         streams = probe.get("streams", [])
         for stream in streams:
             codec = stream.get("codec_name", "")
-            if codec in ("h264", "hevc"):
+            if codec in ("h264", "hevc", "vvc"):
+                codec_map = {"h264": "h264", "hevc": "h265", "vvc": "h266"}
                 return {
                     "file_type": "container",
-                    "codec": "h264" if codec == "h264" else "h265",
+                    "codec": codec_map[codec],
                     "stream_index": stream.get("index", 0),
                     "ffprobe_streams": streams,
                 }
@@ -71,7 +72,7 @@ def _probe_with_ffprobe(filepath: str) -> dict | None:
 def _detect_raw_codec(filepath: str) -> str | None:
     """Detect codec type from raw bitstream by examining NAL headers.
 
-    Returns "h264", "h265", or None.
+    Returns "h264", "h265", "h266", or None.
     """
     try:
         with open(filepath, "rb") as f:
@@ -98,6 +99,16 @@ def _detect_raw_codec(filepath: str) -> str | None:
     if h265_type == 32:  # VPS
         return "h265"
 
+    # H.266: 2-byte NAL header, nal_unit_type in byte1
+    # byte0: forbidden(1)+reserved(1)+layer_id(6), byte1: nal_type(5)+tid(3)
+    # VPS=14, SPS=15, AUD=20
+    if start + 1 < len(header):
+        h266_type = (header[start + 1] >> 3) & 0x1F
+        # H.266 NAL: byte0 should have forbidden=0, reserved=0
+        if (nal_byte & 0xC0) == 0:  # forbidden=0, reserved=0
+            if h266_type in (14, 15, 20):  # VPS, SPS, AUD
+                return "h266"
+
     # Also check for H.264 AUD (type=9) or H.265 AUD (type=35)
     if h264_type == 9:
         return "h264"
@@ -105,7 +116,7 @@ def _detect_raw_codec(filepath: str) -> str | None:
         return "h265"
 
     # Try to use ffprobe on raw stream with explicit format
-    for fmt, codec in [("h264", "h264"), ("hevc", "h265")]:
+    for fmt, codec in [("h264", "h264"), ("hevc", "h265"), ("vvc", "h266")]:
         try:
             result = subprocess.run(
                 [

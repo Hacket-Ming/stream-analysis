@@ -9,6 +9,7 @@ from stream_analysis.demux import extract_raw_bitstream
 from stream_analysis.frame_info import get_frame_info
 from stream_analysis.h264.parser import H264Parser
 from stream_analysis.h265.parser import H265Parser
+from stream_analysis.h266.parser import H266Parser
 from stream_analysis.output.json_writer import write_json
 from stream_analysis.output.csv_writer import write_csv_summary, write_csv_full, write_csv_frames
 
@@ -27,7 +28,7 @@ def main():
                         help="Output format (overrides extension detection)")
     parser.add_argument("--stream", type=int, default=0,
                         help="Video stream index for container files (default: 0)")
-    parser.add_argument("--codec", choices=["h264", "h265"],
+    parser.add_argument("--codec", choices=["h264", "h265", "h266"],
                         default=None,
                         help="Force codec type (auto-detected by default)")
 
@@ -74,8 +75,10 @@ def main():
     # Parse NAL units
     if codec == "h264":
         stream_parser = H264Parser()
-    else:
+    elif codec == "h265":
         stream_parser = H265Parser()
+    else:
+        stream_parser = H266Parser()
 
     nal_results = stream_parser.parse_stream(data)
     print(f"Parsed {len(nal_results)} NAL units", file=sys.stderr)

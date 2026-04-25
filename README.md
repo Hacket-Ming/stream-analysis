@@ -1,13 +1,14 @@
 # Stream Analysis
 
-H.264/H.265 码流语法字段分析工具。解析视频码流中的所有 NAL Unit 语法元素（不含 slice data），输出为 JSON/CSV 表格，并提供帧级解码序与显示序信息。
+H.264/H.265/H.266 码流语法字段分析工具。解析视频码流中的所有 NAL Unit 语法元素（不含 slice data），输出为 JSON/CSV 表格，并提供帧级解码序与显示序信息。
 
 ## 功能
 
 - **H.264 解析**：SPS、PPS、SEI、Slice Header、AUD、Filler、EOS 等全部 NAL 类型
 - **H.265 解析**：VPS、SPS、PPS、SEI、Slice Header、AUD、EOS、EOB 等全部 NAL 类型
+- **H.266 解析**：OPI、DCI、VPS、SPS、PPS、APS（ALF/LMCS/Scaling List）、PH、Slice Header、SEI、AUD、EOS、EOB 等全部 NAL 类型
 - **封装格式支持**：所有 ffmpeg 支持的封装格式（MP4、FLV、MKV、TS 等），自动解封装为裸流
-- **裸流支持**：直接解析 `.264`/`.h264`/`.265`/`.h265` 裸流文件
+- **裸流支持**：直接解析 `.264`/`.h264`/`.265`/`.h265`/`.266`/`.vvc` 裸流文件
 - **帧序信息**：通过 ffprobe 获取每帧的解码序（decoding order）、显示序（display order）、PTS/DTS、帧类型
 - **多种输出格式**：JSON（完整结构化）、CSV 摘要、CSV 完整字段、CSV 帧序表
 
@@ -52,6 +53,10 @@ stream-analysis input.mkv -o output.json --stream 1
 
 # 强制指定编码类型
 stream-analysis input.bin -o output.json --codec h265
+
+# H.266/VVC 码流
+stream-analysis input.266 -o output.json
+stream-analysis input.vvc -o output.json --codec h266
 ```
 
 ## 输出示例
@@ -142,6 +147,22 @@ decode_order,display_order,pict_type,key_frame,pts,pts_time,dts,dts_time
 | 39/40 | SEI | 同 H.264 SEI payload 类型 |
 | 35-38 | 其他 | AUD、EOS、EOB、Filler Data |
 
+### H.266
+
+| NAL Type | 名称 | 解析内容 |
+|----------|------|----------|
+| 12 | OPI | ols_info、htid_info |
+| 13 | DCI | profile_tier_level 数组 |
+| 14 | VPS | max_layers、max_sublayers、profile_tier_level、layer 依赖、OLS 配置 |
+| 15 | SPS | 分辨率、chroma、统一 bit depth、RPL（替代 st_rps）、subpicture、编码工具 flags、VUI |
+| 16 | PPS | per-picture 分辨率（RPR）、tile/slice 分区、PH/SH 字段分配 flags、deblocking |
+| 17/18 | APS | ALF 滤波器参数、LMCS 参数、Scaling List |
+| 19 | PH | POC、ALF/LMCS/SAO 参数、RPL 选择、temporal MVP、QP |
+| 0-11 | Slice Header | slice type、RPL（如不在 PH）、ALF/SAO/deblocking/QP（如不在 PH） |
+| 23/24 | SEI | user_data_unregistered、mastering display、content light level 等 |
+| 20 | AUD | irap_or_gdr_flag、pic_type |
+| 21-22,25 | 其他 | EOS、EOB、Filler Data |
+
 ## 项目结构
 
 ```
@@ -156,6 +177,7 @@ stream_analysis/
 │   ├── frame_info.py        # 帧级 decode/display order
 │   ├── h264/                # H.264 子解析器
 │   ├── h265/                # H.265 子解析器
+│   ├── h266/                # H.266/VVC 子解析器
 │   └── output/              # JSON/CSV 输出格式化
 ├── tests/                   # 单元测试
 └── pyproject.toml

@@ -23,6 +23,9 @@ def extract_raw_bitstream(filepath: str, codec: str, stream_index: int = 0) -> b
     elif codec == "h265":
         bsf = "hevc_mp4toannexb"
         output_format = "hevc"
+    elif codec == "h266":
+        bsf = "vvc_mp4toannexb"
+        output_format = "vvc"
     else:
         raise ValueError(f"Unsupported codec: {codec}")
 
