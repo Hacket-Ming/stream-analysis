@@ -69,7 +69,9 @@ def _compute_display_order(frames: list[dict]) -> None:
     for i, f in enumerate(frames):
         pts = f.get("pts")
         if pts is None:
-            pts = f.get("coded_picture_number", i)
+            pts = f.get("coded_picture_number")
+        if pts is None:
+            pts = i
         pts_pairs.append((i, pts))
 
     # Sort by pts to get display order
